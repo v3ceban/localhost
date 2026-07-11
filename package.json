@@ -9,7 +9,7 @@
     "lint": "eslint",
     "start": "next start",
     "typecheck": "next typegen > /dev/null && tsc --noEmit",
-    "ui:add": "shadcn add"
+    "ui": "shadcn"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
