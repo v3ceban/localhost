@@ -8,7 +8,7 @@
     "format": "prettier --write --log-level warn .",
     "lint": "eslint",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen > /dev/null && tsc --noEmit",
     "ui:add": "shadcn add"
   },
   "dependencies": {
