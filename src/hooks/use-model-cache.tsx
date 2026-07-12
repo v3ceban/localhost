@@ -12,6 +12,8 @@ import {
 } from "@/lib/opfs-cache";
 import { ModelDownloadToast } from "@/components/model-download/toast";
 
+const TOAST_THROTTLE_MS = 333;
+
 type ModelStatus = "unknown" | CachedStatusTag | "downloading" | "error";
 
 export type ModelState = {
@@ -78,12 +80,65 @@ export function ModelCacheProvider({
     }
   }
 
-  function patchModel(model: Model, patch: Partial<ModelState>) {
-    setModels((prev) => ({
-      ...prev,
-      [model]: { ...prev[model], ...patch },
-    }));
+  function showToast(model: Model, state: ModelState) {
+    if (state.status === "downloading" || state.status === "paused") {
+      toast.custom(
+        () => (
+          <ModelDownloadToast
+            model={model}
+            state={state}
+            onPause={() => pause(model)}
+            onResume={() => download(model)}
+            onCancel={() => cancel(model)}
+          />
+        ),
+        { id: TOAST_ID_PREFIX + model, duration: Infinity },
+      );
+    } else {
+      toast.dismiss(TOAST_ID_PREFIX + model);
+    }
   }
+
+  const lastToastAt = React.useRef<Partial<Record<Model, number>>>({});
+  const pendingToastTimer = React.useRef<
+    Partial<Record<Model, ReturnType<typeof setTimeout>>>
+  >({});
+
+  function throttleToast(model: Model, state: ModelState) {
+    const timer = pendingToastTimer.current[model];
+    if (timer) clearTimeout(timer);
+
+    const now = Date.now();
+    const elapsed = now - (lastToastAt.current[model] ?? 0);
+    if (elapsed >= TOAST_THROTTLE_MS) {
+      lastToastAt.current[model] = now;
+      showToast(model, state);
+      return;
+    }
+
+    pendingToastTimer.current[model] = setTimeout(() => {
+      lastToastAt.current[model] = Date.now();
+      showToast(model, state);
+    }, TOAST_THROTTLE_MS - elapsed);
+  }
+
+  function patchModel(
+    model: Model,
+    patch: Partial<ModelState>,
+    throttle = false,
+  ) {
+    setModels((prev) => {
+      const state = { ...prev[model], ...patch };
+      if (throttle) {
+        throttleToast(model, state);
+      } else {
+        showToast(model, state);
+      }
+      return { ...prev, [model]: state };
+    });
+  }
+
+  const patchModelEvent = React.useEffectEvent(patchModel);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -95,24 +150,19 @@ export function ModelCacheProvider({
         }),
       );
       if (controller.signal.aborted) return;
-      setModels((prev) => {
-        const next = { ...prev };
-        for (const [model, cached] of entries) {
-          if (cached.status === "cached") {
-            next[model] = { ...next[model], status: "cached" };
-          } else if (cached.status === "paused") {
-            next[model] = {
-              ...next[model],
-              status: "paused",
-              loaded: cached.loaded,
-              total: cached.total,
-            };
-          } else {
-            next[model] = { ...next[model], status: "idle" };
-          }
+      for (const [model, cached] of entries) {
+        if (cached.status === "paused") {
+          patchModelEvent(model, {
+            status: "paused",
+            loaded: cached.loaded,
+            total: cached.total,
+          });
+        } else if (cached.status === "cached") {
+          patchModelEvent(model, { status: "cached" });
+        } else {
+          patchModelEvent(model, { status: "idle" });
         }
-        return next;
-      });
+      }
     })();
     return () => {
       controller.abort();
@@ -128,18 +178,21 @@ export function ModelCacheProvider({
 
     const onProgress = (progress: DownloadProgress) => {
       if (!isCurrent()) return;
-      patchModel(model, {
-        status: "downloading",
-        loaded: progress.loaded,
-        total: progress.total,
-      });
+      patchModel(
+        model,
+        {
+          status: "downloading",
+          loaded: progress.loaded,
+          total: progress.total,
+        },
+        true,
+      );
     };
 
     void downloadModel(model, controller.signal, onProgress)
       .then(() => {
         if (!isCurrent() || controller.signal.aborted) return;
         patchModel(model, { status: "cached", error: null });
-        toast.dismiss(TOAST_ID_PREFIX + model);
         if (activeModel === null) handleSetActiveModel(model);
       })
       .catch((err: unknown) => {
@@ -152,7 +205,6 @@ export function ModelCacheProvider({
         }
         const message = err instanceof Error ? err.message : "Download failed";
         patchModel(model, { status: "error", error: message });
-        toast.dismiss(TOAST_ID_PREFIX + model);
         toast.error(`${MODELS[model].label} failed to download`, {
           description: message,
         });
@@ -169,7 +221,6 @@ export function ModelCacheProvider({
   function cancel(model: Model) {
     controllers.current[model]?.abort("cancel");
     delete controllers.current[model];
-    toast.dismiss(TOAST_ID_PREFIX + model);
     remove(model);
   }
 
@@ -185,30 +236,6 @@ export function ModelCacheProvider({
       handleSetActiveModel(nextActiveModel);
     });
   }
-
-  const downloadEvent = React.useEffectEvent(download);
-  const cancelEvent = React.useEffectEvent(cancel);
-
-  React.useEffect(() => {
-    for (const key of Object.keys(models) as Model[]) {
-      const state = models[key];
-      const toastId = TOAST_ID_PREFIX + key;
-      if (state.status === "downloading" || state.status === "paused") {
-        toast.custom(
-          () => (
-            <ModelDownloadToast
-              model={key}
-              state={state}
-              onPause={() => pause(key)}
-              onResume={() => downloadEvent(key)}
-              onCancel={() => cancelEvent(key)}
-            />
-          ),
-          { id: toastId, duration: Infinity },
-        );
-      }
-    }
-  }, [models]);
 
   return (
     <ModelCacheContext.Provider
