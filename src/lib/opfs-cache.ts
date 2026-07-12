@@ -41,26 +41,46 @@ async function deleteFile(fileName: string): Promise<void> {
   await dir.removeEntry(fileName).catch(() => {});
 }
 
-async function writeTotalSize(file: string, total: number): Promise<void> {
+type ModelMeta = {
+  total: number;
+  etag: string | null;
+};
+
+async function writeMeta(file: string, meta: ModelMeta): Promise<void> {
   const handle = await getFileHandle(file + META_SUFFIX, true);
   const writable = await handle.createWritable();
-  await writable.write(String(total));
+  await writable.write(JSON.stringify(meta));
   await writable.close();
 }
 
-async function readTotalSize(file: string): Promise<number | null> {
+async function readMeta(file: string): Promise<ModelMeta | null> {
   const handle = await getFileHandle(file + META_SUFFIX, false);
   if (!handle) return null;
   const text = await (await handle.getFile()).text();
-  const total = Number(text);
-  return Number.isFinite(total) && total > 0 ? total : null;
+  let total: number;
+  let etag: string | null = null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const meta = parsed as Partial<ModelMeta>;
+    total = Number(meta.total);
+    etag = typeof meta.etag === "string" ? meta.etag : null;
+  } catch {
+    // Sidecars written before the JSON format held a bare number.
+    total = Number(text);
+  }
+  return Number.isFinite(total) && total > 0 ? { total, etag } : null;
 }
 
 export async function isModelCached(model: Model): Promise<boolean> {
   const handle = await getFileHandle(MODELS[model].file, false);
   if (!handle) return false;
   const file = await handle.getFile();
-  return file.size > 0;
+  if (file.size === 0) return false;
+  // A missing sidecar means the model was cached before sizes were recorded;
+  // treat it as valid rather than discarding a multi-GB download.
+  const meta = await readMeta(MODELS[model].file);
+  return meta == null || file.size === meta.total;
 }
 
 export async function getCachedModelSize(model: Model): Promise<number> {
@@ -78,8 +98,8 @@ export async function getCachedStatus(model: Model): Promise<CachedStatus> {
   const { file } = MODELS[model];
   const partSize = await getFileSize(file + PART_SUFFIX);
   if (partSize > 0) {
-    const total = await readTotalSize(file);
-    return { status: "paused", loaded: partSize, total };
+    const meta = await readMeta(file);
+    return { status: "paused", loaded: partSize, total: meta?.total ?? null };
   }
   if (await isModelCached(model)) return { status: "cached" };
   return { status: "idle" };
@@ -121,8 +141,15 @@ export async function downloadModel(
   const partHandle = await getFileHandle(partName, true);
   const startOffset = (await partHandle.getFile()).size;
 
-  const headers: HeadersInit =
-    startOffset > 0 ? { Range: `bytes=${startOffset}-` } : {};
+  const headers: Record<string, string> = {};
+  if (startOffset > 0) {
+    headers.Range = `bytes=${startOffset}-`;
+    // If the upstream file changed since the partial download, If-Range makes
+    // the server reply 200 with the full new file instead of resuming into a
+    // mismatched mix of versions.
+    const etag = (await readMeta(file))?.etag;
+    if (etag) headers["If-Range"] = etag;
+  }
 
   const response = await fetch(url, { signal, headers });
 
@@ -153,7 +180,13 @@ export async function downloadModel(
 
   let loaded = isRangeSatisfied ? startOffset : 0;
   const total = getTotalSize(response, loaded);
-  if (total != null) await writeTotalSize(file, total);
+  if (total != null) {
+    await writeMeta(file, { total, etag: response.headers.get("ETag") });
+  } else {
+    // No Content-Length: a stale sidecar from an earlier attempt would
+    // wrongly flag the finished file as corrupt.
+    await deleteFile(file + META_SUFFIX);
+  }
   onProgress({ loaded, total });
 
   const reader = response.body.getReader();
@@ -175,16 +208,41 @@ export async function downloadModel(
 
   if (signal.aborted) return;
 
+  const partFile = await partHandle.getFile();
+  if (total != null && partFile.size < total) {
+    // The stream can end without an error on flaky connections; keep the
+    // partial download around so it lands in "paused" instead of being
+    // promoted as a corrupt cache entry.
+    throw new Error(
+      "The download ended before the file was complete. Resume to continue.",
+    );
+  }
+  if (total != null && partFile.size > total) {
+    await deleteFile(partName);
+    await deleteFile(file + META_SUFFIX);
+    throw new Error(
+      "The download was corrupted and has been discarded. Try downloading again.",
+    );
+  }
+
   const finalHandle = await getFileHandle(file, true);
   const finalWritable = await finalHandle.createWritable();
-  const partFile = await partHandle.getFile();
   await partFile.stream().pipeTo(finalWritable);
   await deleteFile(partName);
-  await deleteFile(file + META_SUFFIX);
+  // The sidecar is kept: it now records the expected size of the final file
+  // so cache reads can detect truncation.
 }
 
 export async function getModelFile(model: Model): Promise<File | null> {
   const handle = await getFileHandle(MODELS[model].file, false);
   if (!handle) return null;
-  return handle.getFile();
+  const modelFile = await handle.getFile();
+  const meta = await readMeta(MODELS[model].file);
+  if (modelFile.size === 0 || (meta != null && modelFile.size !== meta.total)) {
+    // Size mismatch is certain corruption; drop the file so the app offers a
+    // fresh download instead of failing to load it on every visit.
+    await deleteModel(model);
+    return null;
+  }
+  return modelFile;
 }

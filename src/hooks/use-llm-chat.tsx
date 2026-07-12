@@ -59,7 +59,7 @@ function extractText(message: LlmMessage): string {
 }
 
 export function LlmChatProvider({ children }: { children: React.ReactNode }) {
-  const { models, activeModel } = useModelCache();
+  const { models, activeModel, remove } = useModelCache();
   const [loadOutcome, setLoadOutcome] = React.useState<LoadOutcome | null>(
     null,
   );
@@ -137,7 +137,14 @@ export function LlmChatProvider({ children }: { children: React.ReactNode }) {
         if (!model || !isCached) return;
         try {
           const file = await getModelFile(model);
-          if (!file) throw new Error("Model file is missing from the cache");
+          if (!file) {
+            // getModelFile already deleted the entry on corruption; sync the
+            // cache provider so the download UI reappears.
+            remove(model);
+            throw new Error(
+              "The cached model file was missing or corrupted and has been removed. Download it again to use this model.",
+            );
+          }
           await ensureLiteRtLm();
           if (token !== loadTokenRef.current) return;
           const engine = await Engine.create({ model: file });
