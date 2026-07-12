@@ -39,6 +39,9 @@ function ModelRow({ model, state }: { model: Model; state: ModelState }) {
   return (
     <li className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2 rounded-lg border p-3">
       <p className="col-start-1 text-sm font-medium">{MODELS[model].label}</p>
+      <p className="text-muted-foreground col-span-full text-xs">
+        {MODELS[model].description}
+      </p>
       {isActive && (
         <p
           role="status"
