@@ -1,0 +1,166 @@
+"use client";
+
+import * as React from "react";
+import {
+  DownloadIcon,
+  RotateCcwIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { MODELS, type Model } from "@/lib/registry";
+import { useModelCache, type ModelState } from "@/hooks/use-model-cache";
+import { Button, type ButtonProps } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ModelDownloadProgress } from "@/components/model-download/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+
+function ModelRow({ model, state }: { model: Model; state: ModelState }) {
+  const { download, pause, cancel, remove } = useModelCache();
+  const id = `model-row-${model}`;
+  const isActive = state.status === "downloading" || state.status === "paused";
+
+  if (state.status === "unknown") {
+    return (
+      <li className="flex items-center justify-between gap-2 rounded-lg border p-3">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-7 w-24" />
+      </li>
+    );
+  }
+
+  return (
+    <li className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2 rounded-lg border p-3">
+      <p className="col-start-1 text-sm font-medium">{MODELS[model].label}</p>
+      {isActive && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-muted-foreground col-start-1 row-start-2 text-xs"
+        >
+          {state.status === "paused" ? "Paused" : "Downloading…"}
+        </p>
+      )}
+      {state.status === "idle" && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="col-start-2 row-start-1"
+          onClick={() => download(model)}
+        >
+          <DownloadIcon />
+          Download
+        </Button>
+      )}
+      {state.status === "error" && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="col-start-2 row-start-1"
+          onClick={() => download(model)}
+        >
+          <DownloadIcon />
+          Retry
+        </Button>
+      )}
+      {state.status === "cached" && (
+        <ButtonGroup className="col-start-2 row-start-1">
+          <Button variant="outline" size="sm" onClick={() => download(model)}>
+            <RotateCcwIcon />
+            Re-download
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => remove(model)}>
+            <Trash2Icon />
+            Delete
+          </Button>
+        </ButtonGroup>
+      )}
+      {isActive && (
+        <ModelDownloadProgress
+          id={id}
+          state={state}
+          className="col-span-2"
+          onPause={() => pause(model)}
+          onResume={() => download(model)}
+          onCancel={() => cancel(model)}
+        />
+      )}
+      {state.status === "error" && state.error && (
+        <p role="alert" className="text-destructive col-span-2 text-xs">
+          {state.error}
+        </p>
+      )}
+    </li>
+  );
+}
+
+function ModelDownloadDialog({
+  open,
+  onOpenChange,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactElement;
+}) {
+  const { models } = useModelCache();
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger render={children} />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Manage models</DialogTitle>
+          <DialogDescription>
+            Download models for offline, on-device inference. Files are stored
+            in this browser only.
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="flex flex-col gap-2">
+          {(Object.keys(MODELS) as Model[]).map((model) => (
+            <ModelRow key={model} model={model} state={models[model]} />
+          ))}
+        </ul>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function ModelDownloadDialogTrigger({
+  variant = "outline",
+  size = "icon",
+  children,
+  ...props
+}: ButtonProps) {
+  const { models } = useModelCache();
+  const [open, setOpen] = React.useState(false);
+  const setOpenEvent = React.useEffectEvent(setOpen);
+
+  const statuses = Object.values(models).map((model) => model.status);
+  const isChecked = !statuses.includes("unknown");
+  const hasCachedModel = statuses.includes("cached");
+
+  React.useEffect(() => {
+    if (isChecked && !hasCachedModel) setOpenEvent(true);
+  }, [isChecked, hasCachedModel]);
+
+  return (
+    <ModelDownloadDialog open={open} onOpenChange={setOpen}>
+      <Button variant={variant} size={size} {...props}>
+        {children ?? (
+          <>
+            <SettingsIcon />
+            <span className="sr-only">Manage models</span>
+          </>
+        )}
+      </Button>
+    </ModelDownloadDialog>
+  );
+}

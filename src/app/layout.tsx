@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Geist, Geist_Mono } from "next/font/google";
-import "./styles.css";
+import { ModelCacheProvider } from "@/hooks/use-model-cache";
+import { Toaster } from "@/components/ui/sonner";
+import "@/app/styles.css";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -30,7 +32,10 @@ export default function Layout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body>
-        {children}
+        <ModelCacheProvider>
+          {children}
+          <Toaster />
+        </ModelCacheProvider>
         <Analytics />
         <SpeedInsights />
       </body>
