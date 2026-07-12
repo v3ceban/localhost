@@ -7,7 +7,6 @@ import {
   deleteModel,
   downloadModel,
   getCachedStatus,
-  isModelCached,
   type CachedStatusTag,
   type DownloadProgress,
 } from "@/lib/opfs-cache";
@@ -30,6 +29,8 @@ const ModelCacheContext = React.createContext<{
   pause: (model: Model) => void;
   cancel: (model: Model) => void;
   remove: (model: Model) => void;
+  activeModel: Model | null;
+  setActiveModel: (model: Model | null) => void;
 } | null>(null);
 
 function defaultModelState(status: ModelStatus): ModelState {
@@ -37,6 +38,17 @@ function defaultModelState(status: ModelStatus): ModelState {
 }
 
 const TOAST_ID_PREFIX = "model-download-";
+const ACTIVE_MODEL_STORAGE_KEY = "active-model";
+
+function isModel(value: string | null): value is Model {
+  return value != null && value in MODELS;
+}
+
+function readStoredActiveModel(): Model | null {
+  if (typeof window === "undefined") return null;
+  const stored = window.localStorage.getItem(ACTIVE_MODEL_STORAGE_KEY);
+  return isModel(stored) ? stored : null;
+}
 
 export function ModelCacheProvider({
   children,
@@ -48,7 +60,23 @@ export function ModelCacheProvider({
       Object.keys(MODELS).map((model) => [model, defaultModelState("unknown")]),
     ) as ModelCacheState;
   });
+  const [activeModel, setActiveModel] = React.useState<Model | null>(null);
   const controllers = React.useRef<Partial<Record<Model, AbortController>>>({});
+
+  const setActiveModelEvent = React.useEffectEvent(setActiveModel);
+
+  React.useEffect(() => {
+    setActiveModelEvent(readStoredActiveModel());
+  }, []);
+
+  function handleSetActiveModel(model: Model | null) {
+    setActiveModel(model);
+    if (model) {
+      window.localStorage.setItem(ACTIVE_MODEL_STORAGE_KEY, model);
+    } else {
+      window.localStorage.removeItem(ACTIVE_MODEL_STORAGE_KEY);
+    }
+  }
 
   function patchModel(model: Model, patch: Partial<ModelState>) {
     setModels((prev) => ({
@@ -112,6 +140,7 @@ export function ModelCacheProvider({
         if (!isCurrent() || controller.signal.aborted) return;
         patchModel(model, { status: "cached", error: null });
         toast.dismiss(TOAST_ID_PREFIX + model);
+        if (activeModel === null) handleSetActiveModel(model);
       })
       .catch((err: unknown) => {
         if (!isCurrent()) return;
@@ -141,23 +170,19 @@ export function ModelCacheProvider({
     controllers.current[model]?.abort("cancel");
     delete controllers.current[model];
     toast.dismiss(TOAST_ID_PREFIX + model);
-
-    void isModelCached(model).then((hasOldCopy) => {
-      if (controllers.current[model]) return;
-      if (hasOldCopy) {
-        void deleteModel(model, true).then(() => {
-          if (controllers.current[model]) return;
-          patchModel(model, { status: "cached", error: null });
-        });
-      } else {
-        remove(model);
-      }
-    });
+    remove(model);
   }
 
   function remove(model: Model) {
     void deleteModel(model).then(() => {
       patchModel(model, defaultModelState("idle"));
+      if (model !== activeModel) return;
+      const nextActiveModel =
+        (Object.keys(MODELS) as Model[]).find(
+          (candidate) =>
+            candidate !== model && models[candidate].status === "cached",
+        ) ?? null;
+      handleSetActiveModel(nextActiveModel);
     });
   }
 
@@ -193,6 +218,8 @@ export function ModelCacheProvider({
         pause,
         cancel,
         remove,
+        activeModel,
+        setActiveModel: handleSetActiveModel,
       }}
     >
       {children}

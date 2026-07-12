@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import {
+  CheckIcon,
   DownloadIcon,
-  RotateCcwIcon,
   SettingsIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -21,11 +21,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 function ModelRow({ model, state }: { model: Model; state: ModelState }) {
-  const { download, pause, cancel, remove } = useModelCache();
+  const { download, pause, cancel, remove, activeModel, setActiveModel } =
+    useModelCache();
   const id = `model-row-${model}`;
   const isActive = state.status === "downloading" || state.status === "paused";
+  const isActiveModel = model === activeModel;
 
   if (state.status === "unknown") {
     return (
@@ -37,7 +40,12 @@ function ModelRow({ model, state }: { model: Model; state: ModelState }) {
   }
 
   return (
-    <li className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2 rounded-lg border p-3">
+    <li
+      className={cn(
+        "grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2 rounded-lg border p-3",
+        isActiveModel && "border-muted-foreground",
+      )}
+    >
       <p className="col-start-1 text-sm font-medium">{MODELS[model].label}</p>
       <p className="text-muted-foreground col-span-full text-xs">
         {MODELS[model].description}
@@ -46,7 +54,7 @@ function ModelRow({ model, state }: { model: Model; state: ModelState }) {
         <p
           role="status"
           aria-live="polite"
-          className="text-muted-foreground col-start-1 row-start-2 text-xs"
+          className="text-muted-foreground col-start-2 row-start-1 text-xs"
         >
           {state.status === "paused" ? "Paused" : "Downloading…"}
         </p>
@@ -75,14 +83,30 @@ function ModelRow({ model, state }: { model: Model; state: ModelState }) {
       )}
       {state.status === "cached" && (
         <ButtonGroup className="col-start-2 row-start-1">
-          <Button variant="outline" size="sm" onClick={() => download(model)}>
-            <RotateCcwIcon />
-            Re-download
-          </Button>
           <Button variant="outline" size="sm" onClick={() => remove(model)}>
             <Trash2Icon />
             Delete
           </Button>
+          {isActiveModel ? (
+            <Button
+              className={"disabled:opacity-100"}
+              variant="default"
+              size="sm"
+              disabled
+            >
+              <CheckIcon />
+              Active
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setActiveModel(model)}
+            >
+              <CheckIcon />
+              Activate
+            </Button>
+          )}
         </ButtonGroup>
       )}
       {isActive && (

@@ -85,13 +85,10 @@ export async function getCachedStatus(model: Model): Promise<CachedStatus> {
   return { status: "idle" };
 }
 
-export async function deleteModel(
-  model: Model,
-  partial = false,
-): Promise<void> {
+export async function deleteModel(model: Model): Promise<void> {
   const { file } = MODELS[model];
   await Promise.all([
-    partial ? Promise.resolve() : deleteFile(file),
+    deleteFile(file),
     deleteFile(file + PART_SUFFIX),
     deleteFile(file + META_SUFFIX),
   ]);
@@ -128,6 +125,14 @@ export async function downloadModel(
     startOffset > 0 ? { Range: `bytes=${startOffset}-` } : {};
 
   const response = await fetch(url, { signal, headers });
+
+  if (response.status === 416) {
+    await deleteFile(partName);
+    await deleteFile(file + META_SUFFIX);
+    throw new Error(
+      "The previous download could not be resumed and was discarded. Try downloading again.",
+    );
+  }
 
   if (!response.ok && response.status !== 206) {
     throw new Error(`Failed to download model: ${response.status}`);
@@ -170,7 +175,6 @@ export async function downloadModel(
 
   if (signal.aborted) return;
 
-  await deleteFile(file);
   const finalHandle = await getFileHandle(file, true);
   const finalWritable = await finalHandle.createWritable();
   const partFile = await partHandle.getFile();
