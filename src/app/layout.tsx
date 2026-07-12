@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    template: "://localhost/%s",
-    default: "://localhost",
+    template: "localhost/%s",
+    default: "localhost/chat",
   },
   description: "Yet another AI chat app. Now with client inference!",
   appleWebApp: { title: "localhost://" },

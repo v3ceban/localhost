@@ -1,10 +1,17 @@
-import * as React from "react";
-import { ModelDownloadDialogTrigger } from "@/components/model-download/dialog";
+import { LlmChatProvider } from "@/hooks/use-llm-chat";
+import { ChatMessages } from "@/components/chat/messages";
+import { ChatComposer } from "@/components/chat/composer";
 
-export default function Page({}: PageProps<"/">) {
+export default async function Page({ searchParams }: PageProps<"/">) {
+  const { q } = await searchParams;
+  const query = Array.isArray(q) ? q[0] : q;
+
   return (
-    <main className="flex min-h-dvh min-w-dvw items-center justify-center">
-      <ModelDownloadDialogTrigger />
-    </main>
+    <LlmChatProvider>
+      <main className="mx-auto grid h-dvh w-full max-w-3xl grid-rows-[1fr_auto] gap-2 p-4">
+        <ChatMessages />
+        <ChatComposer query={query} />
+      </main>
+    </LlmChatProvider>
   );
 }
