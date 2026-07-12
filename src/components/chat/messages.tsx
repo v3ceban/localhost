@@ -11,6 +11,7 @@ import {
 import { Message, MessageContent } from "@/components/ui/message";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
+import { Response } from "@/components/ui/response";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Empty,
@@ -112,13 +113,21 @@ function ChatBubble({
           align={align}
           variant={message.role === "user" ? "default" : "ghost"}
         >
-          <BubbleContent className="whitespace-pre-wrap">
-            {message.content}
+          <BubbleContent
+            className={
+              message.role === "user" ? "whitespace-pre-wrap" : undefined
+            }
+          >
+            {message.role === "user" ? (
+              message.content
+            ) : (
+              <Response>{message.content}</Response>
+            )}
             {isPending && !message.content && <Spinner />}
           </BubbleContent>
         </Bubble>
         {message.error && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-destructive text-xs">
             {message.error}
           </p>
         )}
