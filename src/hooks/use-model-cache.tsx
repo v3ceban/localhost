@@ -80,8 +80,27 @@ export function ModelCacheProvider({
     }
   }
 
+  const toastDismissed = React.useRef<Partial<Record<Model, boolean>>>({});
+  const lastToastAt = React.useRef<Partial<Record<Model, number>>>({});
+  const pendingToastTimer = React.useRef<
+    Partial<Record<Model, ReturnType<typeof setTimeout>>>
+  >({});
+
+  function clearPendingToast(model: Model) {
+    const timer = pendingToastTimer.current[model];
+    if (timer) clearTimeout(timer);
+    delete pendingToastTimer.current[model];
+  }
+
+  function dismissToast(model: Model) {
+    toastDismissed.current[model] = true;
+    clearPendingToast(model);
+    toast.dismiss(TOAST_ID_PREFIX + model);
+  }
+
   function showToast(model: Model, state: ModelState) {
     if (state.status === "downloading" || state.status === "paused") {
+      if (toastDismissed.current[model]) return;
       toast.custom(
         () => (
           <ModelDownloadToast
@@ -90,23 +109,25 @@ export function ModelCacheProvider({
             onPause={() => pause(model)}
             onResume={() => download(model)}
             onCancel={() => cancel(model)}
+            onDismiss={() => dismissToast(model)}
           />
         ),
-        { id: TOAST_ID_PREFIX + model, duration: Infinity },
+        {
+          id: TOAST_ID_PREFIX + model,
+          duration: Infinity,
+          // Fires on swipe-out too; keep the dismissal from being undone by
+          // in-flight progress updates.
+          onDismiss: () => dismissToast(model),
+        },
       );
     } else {
+      clearPendingToast(model);
       toast.dismiss(TOAST_ID_PREFIX + model);
     }
   }
 
-  const lastToastAt = React.useRef<Partial<Record<Model, number>>>({});
-  const pendingToastTimer = React.useRef<
-    Partial<Record<Model, ReturnType<typeof setTimeout>>>
-  >({});
-
   function throttleToast(model: Model, state: ModelState) {
-    const timer = pendingToastTimer.current[model];
-    if (timer) clearTimeout(timer);
+    clearPendingToast(model);
 
     const now = Date.now();
     const elapsed = now - (lastToastAt.current[model] ?? 0);
@@ -117,25 +138,27 @@ export function ModelCacheProvider({
     }
 
     pendingToastTimer.current[model] = setTimeout(() => {
+      delete pendingToastTimer.current[model];
       lastToastAt.current[model] = Date.now();
       showToast(model, state);
     }, TOAST_THROTTLE_MS - elapsed);
   }
+
+  const modelsRef = React.useRef(models);
 
   function patchModel(
     model: Model,
     patch: Partial<ModelState>,
     throttle = false,
   ) {
-    setModels((prev) => {
-      const state = { ...prev[model], ...patch };
-      if (throttle) {
-        throttleToast(model, state);
-      } else {
-        showToast(model, state);
-      }
-      return { ...prev, [model]: state };
-    });
+    const state = { ...modelsRef.current[model], ...patch };
+    modelsRef.current = { ...modelsRef.current, [model]: state };
+    setModels(modelsRef.current);
+    if (throttle) {
+      throttleToast(model, state);
+    } else {
+      showToast(model, state);
+    }
   }
 
   const patchModelEvent = React.useEffectEvent(patchModel);
@@ -170,6 +193,7 @@ export function ModelCacheProvider({
   }, []);
 
   function download(model: Model) {
+    toastDismissed.current[model] = false;
     const controller = new AbortController();
     controllers.current[model] = controller;
     patchModel(model, { status: "downloading", error: null });
@@ -215,6 +239,7 @@ export function ModelCacheProvider({
   }
 
   function pause(model: Model) {
+    toastDismissed.current[model] = false;
     controllers.current[model]?.abort();
   }
 
@@ -231,7 +256,8 @@ export function ModelCacheProvider({
       const nextActiveModel =
         (Object.keys(MODELS) as Model[]).find(
           (candidate) =>
-            candidate !== model && models[candidate].status === "cached",
+            candidate !== model &&
+            modelsRef.current[candidate].status === "cached",
         ) ?? null;
       handleSetActiveModel(nextActiveModel);
     });
