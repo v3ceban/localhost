@@ -23,17 +23,13 @@ export const metadata: Metadata = {
   appleWebApp: { title: "localhost://" },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function Layout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col">
+      <body>
         {children}
         <Analytics />
         <SpeedInsights />
