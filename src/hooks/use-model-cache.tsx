@@ -25,6 +25,12 @@ export type ModelState = {
 
 type ModelCacheState = Record<Model, ModelState>;
 
+type ToastControl = {
+  dismissed?: boolean;
+  lastShownAt?: number;
+  timer?: ReturnType<typeof setTimeout>;
+};
+
 const ModelCacheContext = React.createContext<{
   models: ModelCacheState;
   download: (model: Model) => void;
@@ -80,63 +86,53 @@ export function ModelCacheProvider({
     }
   }
 
-  const toastDismissed = React.useRef<Partial<Record<Model, boolean>>>({});
-  const lastToastAt = React.useRef<Partial<Record<Model, number>>>({});
-  const pendingToastTimer = React.useRef<
-    Partial<Record<Model, ReturnType<typeof setTimeout>>>
-  >({});
+  const toastControls = React.useRef<Partial<Record<Model, ToastControl>>>({});
 
-  function clearPendingToast(model: Model) {
-    const timer = pendingToastTimer.current[model];
-    if (timer) clearTimeout(timer);
-    delete pendingToastTimer.current[model];
-  }
-
-  function dismissToast(model: Model) {
-    toastDismissed.current[model] = true;
-    clearPendingToast(model);
-    toast.dismiss(TOAST_ID_PREFIX + model);
+  function getToastControl(model: Model): ToastControl {
+    return (toastControls.current[model] ??= {});
   }
 
   function showToast(model: Model, state: ModelState) {
-    if (state.status === "downloading" || state.status === "paused") {
-      if (toastDismissed.current[model]) return;
-      toast.custom(
-        () => (
-          <ModelDownloadToast
-            model={model}
-            state={state}
-            onPause={() => pause(model)}
-            onResume={() => download(model)}
-            onCancel={() => cancel(model)}
-          />
-        ),
-        {
-          id: TOAST_ID_PREFIX + model,
-          duration: Infinity,
-          onDismiss: () => dismissToast(model),
-        },
-      );
-    } else {
-      clearPendingToast(model);
+    const control = getToastControl(model);
+    clearTimeout(control.timer);
+    delete control.timer;
+    if (state.status !== "downloading" && state.status !== "paused") {
       toast.dismiss(TOAST_ID_PREFIX + model);
+      return;
     }
+    if (control.dismissed) return;
+    toast.custom(
+      () => (
+        <ModelDownloadToast
+          model={model}
+          state={state}
+          onPause={() => pause(model)}
+          onResume={() => download(model)}
+          onCancel={() => cancel(model)}
+        />
+      ),
+      {
+        id: TOAST_ID_PREFIX + model,
+        duration: Infinity,
+        onDismiss: () => {
+          control.dismissed = true;
+        },
+      },
+    );
   }
 
   function throttleToast(model: Model, state: ModelState) {
-    clearPendingToast(model);
-
-    const now = Date.now();
-    const elapsed = now - (lastToastAt.current[model] ?? 0);
+    const control = getToastControl(model);
+    const elapsed = Date.now() - (control.lastShownAt ?? 0);
     if (elapsed >= TOAST_THROTTLE_MS) {
-      lastToastAt.current[model] = now;
+      control.lastShownAt = Date.now();
       showToast(model, state);
       return;
     }
 
-    pendingToastTimer.current[model] = setTimeout(() => {
-      delete pendingToastTimer.current[model];
-      lastToastAt.current[model] = Date.now();
+    clearTimeout(control.timer);
+    control.timer = setTimeout(() => {
+      control.lastShownAt = Date.now();
       showToast(model, state);
     }, TOAST_THROTTLE_MS - elapsed);
   }
@@ -190,7 +186,7 @@ export function ModelCacheProvider({
   }, []);
 
   function download(model: Model) {
-    toastDismissed.current[model] = false;
+    getToastControl(model).dismissed = false;
     const controller = new AbortController();
     controllers.current[model] = controller;
     patchModel(model, { status: "downloading", error: null });
@@ -236,7 +232,7 @@ export function ModelCacheProvider({
   }
 
   function pause(model: Model) {
-    toastDismissed.current[model] = false;
+    getToastControl(model).dismissed = false;
     controllers.current[model]?.abort();
   }
 
