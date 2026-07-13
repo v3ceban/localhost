@@ -42,7 +42,7 @@ async function deleteFile(fileName: string): Promise<void> {
 }
 
 type ModelMeta = {
-  total: number;
+  size: number;
   etag: string | null;
 };
 
@@ -57,18 +57,16 @@ async function readMeta(file: string): Promise<ModelMeta | null> {
   const handle = await getFileHandle(file + META_SUFFIX, false);
   if (!handle) return null;
   const text = await (await handle.getFile()).text();
-  let total: number;
-  let etag: string | null = null;
   try {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== "object" || parsed === null) return null;
     const meta = parsed as Partial<ModelMeta>;
-    total = Number(meta.total);
-    etag = typeof meta.etag === "string" ? meta.etag : null;
+    const total = Number(meta.size);
+    const etag = typeof meta.etag === "string" ? meta.etag : null;
+    return Number.isFinite(total) && total > 0 ? { size: total, etag } : null;
   } catch {
-    total = Number(text);
+    return null;
   }
-  return Number.isFinite(total) && total > 0 ? { total, etag } : null;
 }
 
 export async function isModelCached(model: Model): Promise<boolean> {
@@ -77,7 +75,7 @@ export async function isModelCached(model: Model): Promise<boolean> {
   const file = await handle.getFile();
   if (file.size === 0) return false;
   const meta = await readMeta(MODELS[model].file);
-  return meta == null || file.size === meta.total;
+  return meta == null || file.size === meta.size;
 }
 
 export async function getCachedModelSize(model: Model): Promise<number> {
@@ -96,7 +94,7 @@ export async function getCachedStatus(model: Model): Promise<CachedStatus> {
   const partSize = await getFileSize(file + PART_SUFFIX);
   if (partSize > 0) {
     const meta = await readMeta(file);
-    return { status: "paused", loaded: partSize, total: meta?.total ?? null };
+    return { status: "paused", loaded: partSize, total: meta?.size ?? null };
   }
   if (await isModelCached(model)) return { status: "cached" };
   return { status: "idle" };
@@ -175,7 +173,7 @@ export async function downloadModel(
   let loaded = isRangeSatisfied ? startOffset : 0;
   const total = getTotalSize(response, loaded);
   if (total != null) {
-    await writeMeta(file, { total, etag: response.headers.get("ETag") });
+    await writeMeta(file, { size: total, etag: response.headers.get("ETag") });
   } else {
     await deleteFile(file + META_SUFFIX);
   }
@@ -203,7 +201,7 @@ export async function downloadModel(
   const partFile = await partHandle.getFile();
   if (total != null && partFile.size < total) {
     throw new Error(
-      "The download ended before the file was complete. Resume to continue.",
+      "The download ended before the file was complete. Try downloading again to continue.",
     );
   }
   if (total != null && partFile.size > total) {
@@ -225,7 +223,7 @@ export async function getModelFile(model: Model): Promise<File | null> {
   if (!handle) return null;
   const modelFile = await handle.getFile();
   const meta = await readMeta(MODELS[model].file);
-  if (modelFile.size === 0 || (meta != null && modelFile.size !== meta.total)) {
+  if (modelFile.size === 0 || (meta != null && modelFile.size !== meta.size)) {
     await deleteModel(model);
     return null;
   }
