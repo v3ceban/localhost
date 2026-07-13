@@ -138,8 +138,6 @@ export function LlmChatProvider({ children }: { children: React.ReactNode }) {
         try {
           const file = await getModelFile(model);
           if (!file) {
-            // getModelFile already deleted the entry on corruption; sync the
-            // cache provider so the download UI reappears.
             remove(model);
             throw new Error(
               "The cached model file was missing or corrupted and has been removed. Download it again to use this model.",
