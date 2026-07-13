@@ -12,7 +12,7 @@ import {
 } from "@/lib/opfs-cache";
 import { ModelDownloadToast } from "@/components/model-download/toast";
 
-const TOAST_THROTTLE_MS = 333;
+const TOAST_THROTTLE_MS = 350;
 
 type ModelStatus = "unknown" | CachedStatusTag | "downloading" | "error";
 
