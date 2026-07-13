@@ -2,7 +2,10 @@
 
 import { MODELS, type Model } from "@/lib/registry";
 import { type ModelState } from "@/hooks/use-model-cache";
-import { ModelDownloadProgress } from "@/components/model-download/progress";
+import {
+  downloadStatusLabel,
+  ModelDownloadProgress,
+} from "@/components/model-download/progress";
 
 export function ModelDownloadToast({
   model,
@@ -30,7 +33,7 @@ export function ModelDownloadToast({
         {MODELS[model].label}
       </p>
       <p className="text-muted-foreground col-start-2 text-xs">
-        {state.status === "paused" ? "Paused" : "Downloading…"}
+        {downloadStatusLabel(state.status)}
       </p>
       <ModelDownloadProgress
         id={id}

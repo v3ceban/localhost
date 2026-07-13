@@ -9,6 +9,7 @@ import {
   type Preface,
 } from "@litert-lm/core";
 import { MODELS, type Model } from "@/lib/registry";
+import { errorMessage } from "@/lib/utils";
 import { getModelFile } from "@/lib/opfs-cache";
 import { ensureLiteRtLm, hardResetLiteRtLm } from "@/lib/litert";
 import { useModelCache } from "@/hooks/use-model-cache";
@@ -52,6 +53,22 @@ const WEDGE_TIMEOUT_MS = 150;
 
 function timeout(ms: number): Promise<"timeout"> {
   return new Promise((resolve) => setTimeout(() => resolve("timeout"), ms));
+}
+
+function raceWedge(
+  label: string,
+  op: () => Promise<unknown>,
+): Promise<"ok" | "error" | "timeout"> {
+  return Promise.race([
+    op().then(
+      () => "ok" as const,
+      (err: unknown) => {
+        console.error(`${label}:`, err);
+        return "error" as const;
+      },
+    ),
+    timeout(WEDGE_TIMEOUT_MS).then(() => "timeout" as const),
+  ]);
 }
 
 function extractText(message: LlmMessage): string {
@@ -119,15 +136,10 @@ export function LlmChatProvider({ children }: { children: React.ReactNode }) {
     cancelGeneration();
     await generationRef.current;
     if (!handles) return;
-    const result = await Promise.race([
-      (async () => {
-        await handles.conversation.delete();
-        await handles.engine.delete();
-      })().catch((err) => {
-        console.error("Failed to delete the engine:", err);
-      }),
-      timeout(WEDGE_TIMEOUT_MS),
-    ]);
+    const result = await raceWedge("Failed to delete the engine", async () => {
+      await handles.conversation.delete();
+      await handles.engine.delete();
+    });
     if (result === "timeout") {
       hardResetLiteRtLm();
     }
@@ -183,8 +195,7 @@ export function LlmChatProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error(`Failed to load ${MODELS[model].label}:`, err);
       if (token !== loadTokenRef.current) return;
-      const message =
-        err instanceof Error ? err.message : "Failed to load model";
+      const message = errorMessage(err, "Failed to load model");
       setLoadOutcome({ model, status: "error", error: message });
       toast.error(`${MODELS[model].label} failed to load`, {
         description: message,
@@ -246,8 +257,7 @@ export function LlmChatProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error("Generation failed:", err);
       if (token === generationTokenRef.current) {
-        const message =
-          err instanceof Error ? err.message : "Generation failed";
+        const message = errorMessage(err, "Generation failed");
         patchAssistant((msg) => ({ ...msg, error: message }));
       }
     } finally {
@@ -319,16 +329,11 @@ export function LlmChatProvider({ children }: { children: React.ReactNode }) {
       if (loadToken !== loadTokenRef.current) return;
 
       const preface: Preface = { messages: [...transcriptRef.current] };
-      const done = await Promise.race([
-        swapConversation(handles, preface)
-          .then(() => true)
-          .catch((err: unknown) => {
-            console.error("Failed to swap the conversation after stop:", err);
-            return false;
-          }),
-        timeout(WEDGE_TIMEOUT_MS).then(() => false),
-      ]);
-      if (done) return;
+      const result = await raceWedge(
+        "Failed to swap the conversation after stop",
+        () => swapConversation(handles, preface),
+      );
+      if (result === "ok") return;
       if (loadToken !== loadTokenRef.current) return;
 
       handlesRef.current = null;
@@ -344,8 +349,7 @@ export function LlmChatProvider({ children }: { children: React.ReactNode }) {
   }
 
   function restart() {
-    generationTokenRef.current++;
-    setIsGenerating(false);
+    cancelGeneration();
     setMessages([]);
     transcriptRef.current = [];
 

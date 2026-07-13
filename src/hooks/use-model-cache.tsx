@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { MODELS, type Model } from "@/lib/registry";
+import { MODEL_IDS, MODELS, type Model } from "@/lib/registry";
+import { errorMessage } from "@/lib/utils";
 import {
   deleteModel,
   downloadModel,
@@ -24,6 +25,10 @@ export type ModelState = {
 };
 
 type ModelCacheState = Record<Model, ModelState>;
+
+export function isDownloadActive(status: ModelStatus): boolean {
+  return status === "downloading" || status === "paused";
+}
 
 type ToastControl = {
   dismissed?: boolean;
@@ -65,7 +70,7 @@ export function ModelCacheProvider({
 }) {
   const [models, setModels] = React.useState(() => {
     return Object.fromEntries(
-      Object.keys(MODELS).map((model) => [model, defaultModelState("unknown")]),
+      MODEL_IDS.map((model) => [model, defaultModelState("unknown")]),
     ) as ModelCacheState;
   });
   const [activeModel, setActiveModel] = React.useState<Model | null>(null);
@@ -96,7 +101,7 @@ export function ModelCacheProvider({
     const control = getToastControl(model);
     clearTimeout(control.timer);
     delete control.timer;
-    if (state.status !== "downloading" && state.status !== "paused") {
+    if (!isDownloadActive(state.status)) {
       toast.dismiss(TOAST_ID_PREFIX + model);
       return;
     }
@@ -121,37 +126,39 @@ export function ModelCacheProvider({
     );
   }
 
-  function throttleToast(model: Model, state: ModelState) {
-    const control = getToastControl(model);
-    const elapsed = Date.now() - (control.lastShownAt ?? 0);
-    if (elapsed >= TOAST_THROTTLE_MS) {
-      control.lastShownAt = Date.now();
-      showToast(model, state);
-      return;
-    }
-
-    clearTimeout(control.timer);
-    control.timer = setTimeout(() => {
-      control.lastShownAt = Date.now();
-      showToast(model, state);
-    }, TOAST_THROTTLE_MS - elapsed);
-  }
-
   const modelsRef = React.useRef(models);
+
+  function commitModel(model: Model) {
+    setModels(modelsRef.current);
+    showToast(model, modelsRef.current[model]);
+  }
 
   function patchModel(
     model: Model,
     patch: Partial<ModelState>,
     throttle = false,
   ) {
-    const state = { ...modelsRef.current[model], ...patch };
-    modelsRef.current = { ...modelsRef.current, [model]: state };
-    setModels(modelsRef.current);
-    if (throttle) {
-      throttleToast(model, state);
-    } else {
-      showToast(model, state);
+    modelsRef.current = {
+      ...modelsRef.current,
+      [model]: { ...modelsRef.current[model], ...patch },
+    };
+    if (!throttle) {
+      commitModel(model);
+      return;
     }
+
+    const control = getToastControl(model);
+    const elapsed = Date.now() - (control.lastShownAt ?? 0);
+    if (elapsed >= TOAST_THROTTLE_MS) {
+      control.lastShownAt = Date.now();
+      commitModel(model);
+      return;
+    }
+    control.timer ??= setTimeout(() => {
+      delete control.timer;
+      control.lastShownAt = Date.now();
+      commitModel(model);
+    }, TOAST_THROTTLE_MS - elapsed);
   }
 
   const patchModelEvent = React.useEffectEvent(patchModel);
@@ -160,24 +167,14 @@ export function ModelCacheProvider({
     const controller = new AbortController();
     void (async () => {
       const entries = await Promise.all(
-        (Object.keys(MODELS) as Model[]).map(async (model) => {
+        MODEL_IDS.map(async (model) => {
           const cached = await getCachedStatus(model);
           return [model, cached] as const;
         }),
       );
       if (controller.signal.aborted) return;
       for (const [model, cached] of entries) {
-        if (cached.status === "paused") {
-          patchModelEvent(model, {
-            status: "paused",
-            loaded: cached.loaded,
-            total: cached.total,
-          });
-        } else if (cached.status === "cached") {
-          patchModelEvent(model, { status: "cached" });
-        } else {
-          patchModelEvent(model, { status: "idle" });
-        }
+        patchModelEvent(model, cached);
       }
     })();
     return () => {
@@ -220,7 +217,7 @@ export function ModelCacheProvider({
           }
           return;
         }
-        const message = err instanceof Error ? err.message : "Download failed";
+        const message = errorMessage(err, "Download failed");
         patchModel(model, { status: "error", error: message });
         toast.error(`${MODELS[model].label} failed to download`, {
           description: message,
@@ -247,7 +244,7 @@ export function ModelCacheProvider({
       patchModel(model, defaultModelState("idle"));
       if (model !== activeModel) return;
       const nextActiveModel =
-        (Object.keys(MODELS) as Model[]).find(
+        MODEL_IDS.find(
           (candidate) =>
             candidate !== model &&
             modelsRef.current[candidate].status === "cached",

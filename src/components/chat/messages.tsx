@@ -133,6 +133,7 @@ function ChatBubble({
 
 export function ChatMessages() {
   const { messages, isGenerating } = useLlmChat();
+  const lastId = messages.at(-1)?.id;
 
   if (messages.length === 0) return <ChatEmpty />;
 
@@ -148,7 +149,7 @@ export function ChatMessages() {
                   isPending={
                     isGenerating &&
                     message.role === "assistant" &&
-                    message.id === messages.at(-1)?.id
+                    message.id === lastId
                   }
                 />
               </MessageScrollerItem>

@@ -7,6 +7,10 @@ import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Progress } from "@/components/ui/progress";
 
+export function downloadStatusLabel(status: ModelState["status"]): string {
+  return status === "paused" ? "Paused" : "Downloading…";
+}
+
 export function ModelDownloadProgress({
   id,
   state,
@@ -22,9 +26,9 @@ export function ModelDownloadProgress({
   onResume: () => void;
   onCancel: () => void;
 }) {
-  const percent =
+  const value =
     state.total != null && state.total > 0
-      ? Math.min(100, Math.round((state.loaded / state.total) * 100))
+      ? Math.min(state.loaded, state.total)
       : null;
   const byteLabelId = `${id}-bytes`;
 
@@ -36,7 +40,8 @@ export function ModelDownloadProgress({
       )}
     >
       <Progress
-        value={percent}
+        value={value}
+        max={state.total ?? undefined}
         aria-describedby={byteLabelId}
         className="col-span-2"
       />
