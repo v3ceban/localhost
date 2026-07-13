@@ -10,9 +10,11 @@ import {
 } from "@/hooks/use-llm-chat";
 import { Message, MessageContent } from "@/components/ui/message";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -59,7 +61,7 @@ function emptyStateFor(
 }
 
 function ChatEmpty() {
-  const { activeModel } = useModelCache();
+  const { activeModel, remove } = useModelCache();
   const { engineStatus, engineError } = useLlmChat();
   const { title, description } = emptyStateFor(
     engineStatus,
@@ -76,6 +78,20 @@ function ChatEmpty() {
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
+      {engineStatus === "error" && activeModel && (
+        <EmptyContent>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => remove(activeModel)}
+          >
+            Remove cached model
+          </Button>
+          <EmptyDescription>
+            If loading keeps failing, the downloaded file may be corrupted.
+          </EmptyDescription>
+        </EmptyContent>
+      )}
     </Empty>
   );
 }

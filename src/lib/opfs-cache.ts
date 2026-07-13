@@ -41,26 +41,41 @@ async function deleteFile(fileName: string): Promise<void> {
   await dir.removeEntry(fileName).catch(() => {});
 }
 
-async function writeTotalSize(file: string, total: number): Promise<void> {
+type ModelMeta = {
+  size: number;
+  etag: string | null;
+};
+
+async function writeMeta(file: string, meta: ModelMeta): Promise<void> {
   const handle = await getFileHandle(file + META_SUFFIX, true);
   const writable = await handle.createWritable();
-  await writable.write(String(total));
+  await writable.write(JSON.stringify(meta));
   await writable.close();
 }
 
-async function readTotalSize(file: string): Promise<number | null> {
+async function readMeta(file: string): Promise<ModelMeta | null> {
   const handle = await getFileHandle(file + META_SUFFIX, false);
   if (!handle) return null;
   const text = await (await handle.getFile()).text();
-  const total = Number(text);
-  return Number.isFinite(total) && total > 0 ? total : null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const meta = parsed as Partial<ModelMeta>;
+    const total = Number(meta.size);
+    const etag = typeof meta.etag === "string" ? meta.etag : null;
+    return Number.isFinite(total) && total > 0 ? { size: total, etag } : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function isModelCached(model: Model): Promise<boolean> {
   const handle = await getFileHandle(MODELS[model].file, false);
   if (!handle) return false;
   const file = await handle.getFile();
-  return file.size > 0;
+  if (file.size === 0) return false;
+  const meta = await readMeta(MODELS[model].file);
+  return meta == null || file.size === meta.size;
 }
 
 export async function getCachedModelSize(model: Model): Promise<number> {
@@ -78,8 +93,8 @@ export async function getCachedStatus(model: Model): Promise<CachedStatus> {
   const { file } = MODELS[model];
   const partSize = await getFileSize(file + PART_SUFFIX);
   if (partSize > 0) {
-    const total = await readTotalSize(file);
-    return { status: "paused", loaded: partSize, total };
+    const meta = await readMeta(file);
+    return { status: "paused", loaded: partSize, total: meta?.size ?? null };
   }
   if (await isModelCached(model)) return { status: "cached" };
   return { status: "idle" };
@@ -121,8 +136,12 @@ export async function downloadModel(
   const partHandle = await getFileHandle(partName, true);
   const startOffset = (await partHandle.getFile()).size;
 
-  const headers: HeadersInit =
-    startOffset > 0 ? { Range: `bytes=${startOffset}-` } : {};
+  const headers: Record<string, string> = {};
+  if (startOffset > 0) {
+    headers.Range = `bytes=${startOffset}-`;
+    const etag = (await readMeta(file))?.etag;
+    if (etag) headers["If-Range"] = etag;
+  }
 
   const response = await fetch(url, { signal, headers });
 
@@ -153,7 +172,11 @@ export async function downloadModel(
 
   let loaded = isRangeSatisfied ? startOffset : 0;
   const total = getTotalSize(response, loaded);
-  if (total != null) await writeTotalSize(file, total);
+  if (total != null) {
+    await writeMeta(file, { size: total, etag: response.headers.get("ETag") });
+  } else {
+    await deleteFile(file + META_SUFFIX);
+  }
   onProgress({ loaded, total });
 
   const reader = response.body.getReader();
@@ -175,16 +198,34 @@ export async function downloadModel(
 
   if (signal.aborted) return;
 
+  const partFile = await partHandle.getFile();
+  if (total != null && partFile.size < total) {
+    throw new Error(
+      "The download ended before the file was complete. Try downloading again to continue.",
+    );
+  }
+  if (total != null && partFile.size > total) {
+    await deleteFile(partName);
+    await deleteFile(file + META_SUFFIX);
+    throw new Error(
+      "The download was corrupted and has been discarded. Try downloading again.",
+    );
+  }
+
   const finalHandle = await getFileHandle(file, true);
   const finalWritable = await finalHandle.createWritable();
-  const partFile = await partHandle.getFile();
   await partFile.stream().pipeTo(finalWritable);
   await deleteFile(partName);
-  await deleteFile(file + META_SUFFIX);
 }
 
 export async function getModelFile(model: Model): Promise<File | null> {
   const handle = await getFileHandle(MODELS[model].file, false);
   if (!handle) return null;
-  return handle.getFile();
+  const modelFile = await handle.getFile();
+  const meta = await readMeta(MODELS[model].file);
+  if (modelFile.size === 0 || (meta != null && modelFile.size !== meta.size)) {
+    await deleteModel(model);
+    return null;
+  }
+  return modelFile;
 }
