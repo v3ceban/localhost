@@ -24,12 +24,12 @@ export function ModelDownloadToast({
       aria-labelledby={`${id}-label`}
       role="status"
       aria-live="polite"
-      className="grid w-[min(24rem,calc(100vw-2rem))] grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2 rounded-xl bg-popover p-4 ring-1 ring-foreground/10"
+      className="bg-popover ring-foreground/10 grid w-[min(24rem,calc(100vw-2rem))] grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2 rounded-xl p-4 ring-1"
     >
       <p id={`${id}-label`} className="col-start-1 text-sm font-medium">
         {MODELS[model].label}
       </p>
-      <p className="col-start-2 text-xs text-muted-foreground">
+      <p className="text-muted-foreground col-start-2 text-xs">
         {state.status === "paused" ? "Paused" : "Downloading…"}
       </p>
       <ModelDownloadProgress
