@@ -29,6 +29,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { cn } from "@/lib/utils";
 
 function emptyStateFor(
   status: EngineStatus,
@@ -104,25 +105,15 @@ function ChatBubble({
   message: ChatMessage;
   isPending: boolean;
 }) {
-  const align = message.role === "user" ? "end" : "start";
+  const isUser = message.role === "user";
+  const align = isUser ? "end" : "start";
 
   return (
     <Message align={align}>
       <MessageContent>
-        <Bubble
-          align={align}
-          variant={message.role === "user" ? "default" : "ghost"}
-        >
-          <BubbleContent
-            className={
-              message.role === "user" ? "whitespace-pre-wrap" : undefined
-            }
-          >
-            {message.role === "user" ? (
-              message.content
-            ) : (
-              <Response>{message.content}</Response>
-            )}
+        <Bubble align={align} variant={isUser ? "default" : "ghost"}>
+          <BubbleContent className={cn(isUser && "whitespace-pre-wrap")}>
+            {isUser ? message.content : <Response>{message.content}</Response>}
             {isPending && !message.content && <Spinner />}
           </BubbleContent>
         </Bubble>

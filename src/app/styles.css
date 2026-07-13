@@ -3,27 +3,9 @@
 @import "shadcn/tailwind.css";
 @import "./typeset.css";
 
-/* Streamdown components style themselves with Tailwind utility classes
-   (font-semibold, bg-muted, code-block line layout); typeset covers only
-   bare markdown elements, so those classes must be generated too. */
 @source "../../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
-
-/* With line numbers off, streamdown emits code lines as classless spans and
-   leaves the line breaks to the line-number class it no longer applies. */
-[data-streamdown="code-block-body"] code > span {
-  display: block;
-}
-
-.typeset-chat {
-  --typeset-font-body: var(--font-sans);
-  --typeset-font-heading: var(--font-sans);
-  --typeset-font-mono: var(--font-mono);
-  --typeset-size: 14px;
-  --typeset-leading: 1.75;
-  --typeset-flow: 1.25em;
-}
 
 @theme inline {
   --color-background: var(--background);
@@ -152,4 +134,17 @@
   html {
     @apply font-sans;
   }
+}
+
+[data-streamdown="code-block-body"] code > span {
+  @apply block;
+}
+
+.typeset-chat {
+  --typeset-font-body: var(--font-sans);
+  --typeset-font-heading: var(--font-sans);
+  --typeset-font-mono: var(--font-mono);
+  --typeset-size: 14px;
+  --typeset-leading: 1.75;
+  --typeset-flow: 1.25em;
 }
