@@ -41,7 +41,7 @@ function emptyStateFor(
       return {
         title: "No model active",
         description:
-          "Download a model and activate it to chat fully on-device.",
+          "Download a model and activate it to start chatting.",
       };
     case "loading":
     case "recovering":
