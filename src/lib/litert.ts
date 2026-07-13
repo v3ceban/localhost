@@ -5,14 +5,18 @@ import {
   unloadLiteRtLm,
   type LiteRtLm,
 } from "@litert-lm/core";
+import { env } from "@/env";
 
 type LogChannel = (message: string) => void;
 
+const isProd = env.NODE_ENV === "production";
+const drop: LogChannel = () => {};
+
 const LOG_CHANNELS: [RegExp, LogChannel][] = [
   [/^(?:[EF]\d|ERROR|FATAL)/, console.error],
-  [/^(?:W\d|WARNING)/, console.warn],
-  [/^(?:I\d|INFO)/, console.info],
-  [/^(?:[VD]\d|VLOG|DEBUG)/, console.debug],
+  [/^(?:W\d|WARNING)/, isProd ? drop : console.warn],
+  [/^(?:I\d|INFO)/, isProd ? drop : console.info],
+  [/^(?:[VD]\d|VLOG|DEBUG)/, isProd ? drop : console.debug],
 ];
 
 function routeLog(line: string, fallback: LogChannel) {
@@ -25,18 +29,17 @@ function routeLog(line: string, fallback: LogChannel) {
   fallback(line);
 }
 
-type WasmModuleOverrides = {
-  print: LogChannel;
-  printErr: LogChannel;
-};
-
 let logRouterInstalled = false;
 
 function installWasmLogRouter() {
   if (logRouterInstalled) return;
   logRouterInstalled = true;
-  (globalThis as unknown as { Module?: WasmModuleOverrides }).Module = {
-    print: (line) => routeLog(line, console.log),
+  (
+    globalThis as unknown as {
+      Module?: { print: LogChannel; printErr: LogChannel };
+    }
+  ).Module = {
+    print: (line) => routeLog(line, isProd ? drop : console.log),
     printErr: (line) => routeLog(line, console.error),
   };
 }

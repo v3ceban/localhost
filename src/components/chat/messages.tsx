@@ -44,6 +44,7 @@ function emptyStateFor(
           "Download a model and activate it to chat fully on-device.",
       };
     case "loading":
+    case "recovering":
       return {
         title: `Loading ${modelLabel ?? "model"}…`,
         description: "The model is being loaded into memory. Hang tight.",
@@ -56,8 +57,7 @@ function emptyStateFor(
     case "ready":
       return {
         title: "Ready when you are",
-        description:
-          "Everything runs in this browser. The chat is wiped on refresh.",
+        description: "Chat with your local llm instance. Privately.",
       };
   }
 }
@@ -75,7 +75,11 @@ function ChatEmpty() {
     <Empty>
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          {engineStatus === "loading" ? <Spinner /> : <BotIcon />}
+          {engineStatus === "loading" || engineStatus === "recovering" ? (
+            <Spinner />
+          ) : (
+            <BotIcon />
+          )}
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
@@ -129,6 +133,7 @@ function ChatBubble({
 
 export function ChatMessages() {
   const { messages, isGenerating } = useLlmChat();
+  const lastId = messages.at(-1)?.id;
 
   if (messages.length === 0) return <ChatEmpty />;
 
@@ -144,7 +149,7 @@ export function ChatMessages() {
                   isPending={
                     isGenerating &&
                     message.role === "assistant" &&
-                    message.id === messages.at(-1)?.id
+                    message.id === lastId
                   }
                 />
               </MessageScrollerItem>

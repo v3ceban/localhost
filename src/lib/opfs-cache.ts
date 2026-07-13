@@ -3,25 +3,30 @@ import { MODELS, type Model } from "@/lib/registry";
 const PART_SUFFIX = ".part";
 const META_SUFFIX = ".meta";
 
-async function getModelsDir(): Promise<FileSystemDirectoryHandle> {
-  const root = await navigator.storage.getDirectory();
-  return root.getDirectoryHandle("models", { create: true });
+let modelsDirPromise: Promise<FileSystemDirectoryHandle> | null = null;
+
+function getModelsDir(): Promise<FileSystemDirectoryHandle> {
+  modelsDirPromise ??= navigator.storage
+    .getDirectory()
+    .then((root) => root.getDirectoryHandle("models", { create: true }))
+    .catch((err: unknown) => {
+      modelsDirPromise = null;
+      throw err;
+    });
+  return modelsDirPromise;
 }
 
-async function getFileHandle(
+async function createFileHandle(
   fileName: string,
-  create: true,
-): Promise<FileSystemFileHandle>;
-async function getFileHandle(
+): Promise<FileSystemFileHandle> {
+  const dir = await getModelsDir();
+  return dir.getFileHandle(fileName, { create: true });
+}
+
+async function findFileHandle(
   fileName: string,
-  create: false,
-): Promise<FileSystemFileHandle | null>;
-async function getFileHandle(
-  fileName: string,
-  create: boolean,
 ): Promise<FileSystemFileHandle | null> {
   const dir = await getModelsDir();
-  if (create) return dir.getFileHandle(fileName, { create: true });
   try {
     return await dir.getFileHandle(fileName, { create: false });
   } catch {
@@ -30,7 +35,7 @@ async function getFileHandle(
 }
 
 async function getFileSize(fileName: string): Promise<number> {
-  const handle = await getFileHandle(fileName, false);
+  const handle = await findFileHandle(fileName);
   if (!handle) return 0;
   const file = await handle.getFile();
   return file.size;
@@ -41,20 +46,27 @@ async function deleteFile(fileName: string): Promise<void> {
   await dir.removeEntry(fileName).catch(() => {});
 }
 
+async function discardPartialDownload(file: string): Promise<void> {
+  await Promise.all([
+    deleteFile(file + PART_SUFFIX),
+    deleteFile(file + META_SUFFIX),
+  ]);
+}
+
 type ModelMeta = {
   size: number;
   etag: string | null;
 };
 
 async function writeMeta(file: string, meta: ModelMeta): Promise<void> {
-  const handle = await getFileHandle(file + META_SUFFIX, true);
+  const handle = await createFileHandle(file + META_SUFFIX);
   const writable = await handle.createWritable();
   await writable.write(JSON.stringify(meta));
   await writable.close();
 }
 
 async function readMeta(file: string): Promise<ModelMeta | null> {
-  const handle = await getFileHandle(file + META_SUFFIX, false);
+  const handle = await findFileHandle(file + META_SUFFIX);
   if (!handle) return null;
   const text = await (await handle.getFile()).text();
   try {
@@ -69,17 +81,18 @@ async function readMeta(file: string): Promise<ModelMeta | null> {
   }
 }
 
-export async function isModelCached(model: Model): Promise<boolean> {
-  const handle = await getFileHandle(MODELS[model].file, false);
-  if (!handle) return false;
-  const file = await handle.getFile();
-  if (file.size === 0) return false;
-  const meta = await readMeta(MODELS[model].file);
-  return meta == null || file.size === meta.size;
+function isValidModelFile(file: File, meta: ModelMeta | null): boolean {
+  return file.size > 0 && (meta == null || file.size === meta.size);
 }
 
-export async function getCachedModelSize(model: Model): Promise<number> {
-  return getFileSize(MODELS[model].file);
+async function isModelCached(model: Model): Promise<boolean> {
+  const handle = await findFileHandle(MODELS[model].file);
+  if (!handle) return false;
+  const [file, meta] = await Promise.all([
+    handle.getFile(),
+    readMeta(MODELS[model].file),
+  ]);
+  return isValidModelFile(file, meta);
 }
 
 export type CachedStatus =
@@ -102,11 +115,7 @@ export async function getCachedStatus(model: Model): Promise<CachedStatus> {
 
 export async function deleteModel(model: Model): Promise<void> {
   const { file } = MODELS[model];
-  await Promise.all([
-    deleteFile(file),
-    deleteFile(file + PART_SUFFIX),
-    deleteFile(file + META_SUFFIX),
-  ]);
+  await Promise.all([deleteFile(file), discardPartialDownload(file)]);
 }
 
 export type DownloadProgress = {
@@ -133,7 +142,7 @@ export async function downloadModel(
   const { file, url } = MODELS[model];
   const partName = file + PART_SUFFIX;
 
-  const partHandle = await getFileHandle(partName, true);
+  const partHandle = await createFileHandle(partName);
   const startOffset = (await partHandle.getFile()).size;
 
   const headers: Record<string, string> = {};
@@ -146,8 +155,7 @@ export async function downloadModel(
   const response = await fetch(url, { signal, headers });
 
   if (response.status === 416) {
-    await deleteFile(partName);
-    await deleteFile(file + META_SUFFIX);
+    await discardPartialDownload(file);
     throw new Error(
       "The previous download could not be resumed and was discarded. Try downloading again.",
     );
@@ -205,27 +213,24 @@ export async function downloadModel(
     );
   }
   if (total != null && partFile.size > total) {
-    await deleteFile(partName);
-    await deleteFile(file + META_SUFFIX);
+    await discardPartialDownload(file);
     throw new Error(
       "The download was corrupted and has been discarded. Try downloading again.",
     );
   }
 
-  const finalHandle = await getFileHandle(file, true);
+  const finalHandle = await createFileHandle(file);
   const finalWritable = await finalHandle.createWritable();
   await partFile.stream().pipeTo(finalWritable);
   await deleteFile(partName);
 }
 
 export async function getModelFile(model: Model): Promise<File | null> {
-  const handle = await getFileHandle(MODELS[model].file, false);
+  const handle = await findFileHandle(MODELS[model].file);
   if (!handle) return null;
-  const modelFile = await handle.getFile();
-  const meta = await readMeta(MODELS[model].file);
-  if (modelFile.size === 0 || (meta != null && modelFile.size !== meta.size)) {
-    await deleteModel(model);
-    return null;
-  }
-  return modelFile;
+  const [modelFile, meta] = await Promise.all([
+    handle.getFile(),
+    readMeta(MODELS[model].file),
+  ]);
+  return isValidModelFile(modelFile, meta) ? modelFile : null;
 }

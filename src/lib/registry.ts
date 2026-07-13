@@ -24,4 +24,4 @@ type ModelDetails = {
 
 export type Model = keyof typeof MODELS;
 
-export const DEFAULT_MODEL: Model = "gemma-4-e2b";
+export const MODEL_IDS = Object.keys(MODELS) as Model[];

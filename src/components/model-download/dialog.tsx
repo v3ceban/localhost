@@ -7,12 +7,19 @@ import {
   SettingsIcon,
   Trash2Icon,
 } from "lucide-react";
-import { MODELS, type Model } from "@/lib/registry";
-import { useModelCache, type ModelState } from "@/hooks/use-model-cache";
+import { MODEL_IDS, MODELS, type Model } from "@/lib/registry";
+import {
+  isDownloadActive,
+  useModelCache,
+  type ModelState,
+} from "@/hooks/use-model-cache";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ModelDownloadProgress } from "@/components/model-download/progress";
+import {
+  downloadStatusLabel,
+  ModelDownloadProgress,
+} from "@/components/model-download/progress";
 import {
   Dialog,
   DialogContent,
@@ -27,7 +34,7 @@ function ModelRow({ model, state }: { model: Model; state: ModelState }) {
   const { download, pause, cancel, remove, activeModel, setActiveModel } =
     useModelCache();
   const id = `model-row-${model}`;
-  const isActive = state.status === "downloading" || state.status === "paused";
+  const isActive = isDownloadActive(state.status);
   const isActiveModel = model === activeModel;
 
   if (state.status === "unknown") {
@@ -56,10 +63,10 @@ function ModelRow({ model, state }: { model: Model; state: ModelState }) {
           aria-live="polite"
           className="text-muted-foreground col-start-2 row-start-1 text-xs"
         >
-          {state.status === "paused" ? "Paused" : "Downloading…"}
+          {downloadStatusLabel(state.status)}
         </p>
       )}
-      {state.status === "idle" && (
+      {(state.status === "idle" || state.status === "error") && (
         <Button
           variant="outline"
           size="sm"
@@ -67,18 +74,7 @@ function ModelRow({ model, state }: { model: Model; state: ModelState }) {
           onClick={() => download(model)}
         >
           <DownloadIcon />
-          Download
-        </Button>
-      )}
-      {state.status === "error" && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="col-start-2 row-start-1"
-          onClick={() => download(model)}
-        >
-          <DownloadIcon />
-          Retry
+          {state.status === "error" ? "Retry" : "Download"}
         </Button>
       )}
       {state.status === "cached" && (
@@ -151,7 +147,7 @@ function ModelDownloadDialog({
           </DialogDescription>
         </DialogHeader>
         <ul className="flex flex-col gap-2">
-          {(Object.keys(MODELS) as Model[]).map((model) => (
+          {MODEL_IDS.map((model) => (
             <ModelRow key={model} model={model} state={models[model]} />
           ))}
         </ul>
