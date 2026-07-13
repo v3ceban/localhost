@@ -8,7 +8,7 @@ export default async function Page({ searchParams }: PageProps<"/">) {
 
   return (
     <LlmChatProvider>
-      <main className="mx-auto grid h-dvh w-full max-w-3xl grid-rows-[1fr_auto] gap-2 p-4">
+      <main className="mx-auto grid h-dvh w-full max-w-194 grid-rows-[1fr_auto] gap-2 p-4">
         <ChatMessages />
         <ChatComposer query={query} />
       </main>

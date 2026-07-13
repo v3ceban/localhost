@@ -11,6 +11,7 @@ import {
 import { Message, MessageContent } from "@/components/ui/message";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
+import { Response } from "@/components/ui/response";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Empty,
@@ -28,6 +29,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { cn } from "@/lib/utils";
 
 function emptyStateFor(
   status: EngineStatus,
@@ -103,22 +105,20 @@ function ChatBubble({
   message: ChatMessage;
   isPending: boolean;
 }) {
-  const align = message.role === "user" ? "end" : "start";
+  const isUser = message.role === "user";
+  const align = isUser ? "end" : "start";
 
   return (
     <Message align={align}>
       <MessageContent>
-        <Bubble
-          align={align}
-          variant={message.role === "user" ? "default" : "ghost"}
-        >
-          <BubbleContent className="whitespace-pre-wrap">
-            {message.content}
+        <Bubble align={align} variant={isUser ? "default" : "muted"}>
+          <BubbleContent className={cn(isUser && "whitespace-pre-wrap")}>
+            {isUser ? message.content : <Response>{message.content}</Response>}
             {isPending && !message.content && <Spinner />}
           </BubbleContent>
         </Bubble>
         {message.error && (
-          <p role="alert" className="text-xs text-destructive">
+          <p role="alert" className="text-destructive text-xs">
             {message.error}
           </p>
         )}
@@ -132,21 +132,19 @@ export function ChatMessages() {
 
   if (messages.length === 0) return <ChatEmpty />;
 
-  const lastMessage = messages.at(-1);
-
   return (
-    <MessageScrollerProvider>
+    <MessageScrollerProvider autoScroll>
       <MessageScroller>
-        <MessageScrollerViewport>
+        <MessageScrollerViewport className="scroll-fade-none">
           <MessageScrollerContent className="py-4">
             {messages.map((message) => (
-              <MessageScrollerItem key={message.id}>
+              <MessageScrollerItem className="px-2" key={message.id}>
                 <ChatBubble
                   message={message}
                   isPending={
                     isGenerating &&
                     message.role === "assistant" &&
-                    message.id === lastMessage?.id
+                    message.id === messages.at(-1)?.id
                   }
                 />
               </MessageScrollerItem>
