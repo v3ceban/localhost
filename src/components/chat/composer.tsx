@@ -48,6 +48,7 @@ export function ChatComposer({ query = "" }) {
         submit();
       }}
       autoComplete="off"
+      className="px-2"
     >
       <InputGroup className="dark:has-disabled:bg-input/30 has-disabled:bg-transparent has-disabled:opacity-100">
         <InputGroupTextarea

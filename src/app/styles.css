@@ -134,17 +134,16 @@
   html {
     @apply font-sans;
   }
+  .typeset-chat {
+    --typeset-font-body: var(--font-sans);
+    --typeset-font-heading: var(--font-sans);
+    --typeset-font-mono: var(--font-mono);
+    --typeset-size: 14px;
+    --typeset-leading: 1.75;
+    --typeset-flow: 1.25em;
+  }
 }
 
 [data-streamdown="code-block-body"] code > span {
   @apply block;
-}
-
-.typeset-chat {
-  --typeset-font-body: var(--font-sans);
-  --typeset-font-heading: var(--font-sans);
-  --typeset-font-mono: var(--font-mono);
-  --typeset-size: 14px;
-  --typeset-leading: 1.75;
-  --typeset-flow: 1.25em;
 }

@@ -111,7 +111,7 @@ function ChatBubble({
   return (
     <Message align={align}>
       <MessageContent>
-        <Bubble align={align} variant={isUser ? "default" : "ghost"}>
+        <Bubble align={align} variant={isUser ? "default" : "muted"}>
           <BubbleContent className={cn(isUser && "whitespace-pre-wrap")}>
             {isUser ? message.content : <Response>{message.content}</Response>}
             {isPending && !message.content && <Spinner />}
@@ -132,21 +132,19 @@ export function ChatMessages() {
 
   if (messages.length === 0) return <ChatEmpty />;
 
-  const lastMessage = messages.at(-1);
-
   return (
-    <MessageScrollerProvider>
+    <MessageScrollerProvider autoScroll>
       <MessageScroller>
-        <MessageScrollerViewport>
+        <MessageScrollerViewport className="scroll-fade-none">
           <MessageScrollerContent className="py-4">
             {messages.map((message) => (
-              <MessageScrollerItem key={message.id}>
+              <MessageScrollerItem className="px-2" key={message.id}>
                 <ChatBubble
                   message={message}
                   isPending={
                     isGenerating &&
                     message.role === "assistant" &&
-                    message.id === lastMessage?.id
+                    message.id === messages.at(-1)?.id
                   }
                 />
               </MessageScrollerItem>
