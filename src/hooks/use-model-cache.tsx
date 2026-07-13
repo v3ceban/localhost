@@ -109,14 +109,11 @@ export function ModelCacheProvider({
             onPause={() => pause(model)}
             onResume={() => download(model)}
             onCancel={() => cancel(model)}
-            onDismiss={() => dismissToast(model)}
           />
         ),
         {
           id: TOAST_ID_PREFIX + model,
           duration: Infinity,
-          // Fires on swipe-out too; keep the dismissal from being undone by
-          // in-flight progress updates.
           onDismiss: () => dismissToast(model),
         },
       );

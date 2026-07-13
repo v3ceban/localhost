@@ -1,10 +1,8 @@
 "use client";
 
-import { XIcon } from "lucide-react";
 import { MODELS, type Model } from "@/lib/registry";
 import { type ModelState } from "@/hooks/use-model-cache";
 import { ModelDownloadProgress } from "@/components/model-download/progress";
-import { Button } from "@/components/ui/button";
 
 export function ModelDownloadToast({
   model,
@@ -12,14 +10,12 @@ export function ModelDownloadToast({
   onPause,
   onResume,
   onCancel,
-  onDismiss,
 }: {
   model: Model;
   state: ModelState;
   onPause: () => void;
   onResume: () => void;
   onCancel: () => void;
-  onDismiss: () => void;
 }) {
   const id = `model-download-toast-${model}`;
 
@@ -28,27 +24,18 @@ export function ModelDownloadToast({
       aria-labelledby={`${id}-label`}
       role="status"
       aria-live="polite"
-      className="grid w-[min(24rem,calc(100vw-2rem))] grid-cols-[1fr_auto_auto] items-center gap-x-2 gap-y-2 rounded-xl bg-popover p-4 ring-1 ring-foreground/10"
+      className="bg-popover ring-foreground/10 grid w-[min(24rem,calc(100vw-2rem))] grid-cols-[1fr_auto] items-center gap-x-2 gap-y-2 rounded-xl p-4 ring-1"
     >
       <p id={`${id}-label`} className="col-start-1 text-sm font-medium">
         {MODELS[model].label}
       </p>
-      <p className="col-start-2 text-xs text-muted-foreground">
+      <p className="text-muted-foreground col-start-2 text-xs">
         {state.status === "paused" ? "Paused" : "Downloading…"}
       </p>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        className="col-start-3 -my-1 -mr-1 text-muted-foreground"
-        aria-label="Hide download notification"
-        onClick={onDismiss}
-      >
-        <XIcon />
-      </Button>
       <ModelDownloadProgress
         id={id}
         state={state}
-        className="col-span-3"
+        className="col-span-2"
         onPause={onPause}
         onResume={onResume}
         onCancel={onCancel}
